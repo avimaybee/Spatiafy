@@ -1,0 +1,5 @@
+{
+  "name": "Depth-ify MVP",
+  "description": "Turn any photo into a 3D spatial memory instantly using client-side AI. Drag, drop, and tilt.",
+  "requestFramePermissions": []
+}

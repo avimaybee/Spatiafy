@@ -1,0 +1,83 @@
+Phase 0 – Project Setup
+
+ completed.
+
+Phase 1 – Landing & Upload UI
+
+ Create beautiful landing page (hero + drag & drop zone)
+ Implement file picker + drag & drop (accept JPG/PNG/WEBP, max 20 MB) - DONE
+ Add mobile-friendly upload UI (looks good on iPhone/Android) - DONE
+ Add loading skeleton / “Drop your photo” placeholder - DONE
+ Add simple footer + “Made by …” + GitHub link - DONE
+
+Phase 2 – Processing Pipeline Core
+
+ Add @xenova/transformers (transformers.js)
+ Download & place SAM ViT-Base ONNX quantized model (public/models/sam-vit-base.onnx)
+ Write segmentation wrapper (lib/segmentation.ts) that returns alpha mask
+ Test segmentation speed & quality on 5 different photos (portrait, pet, object, group, landscape)
+ Add onnxruntime-web + WebGPU support
+ Download & place Google Nano Banana Inpainting - DONE
+ Create processing pipeline (lib/createDepth.ts) that:
+Runs segmentation → foreground + mask
+Runs inpainting on background
+Returns foreground canvas + background canvas
+
+
+Phase 3 – 3D Viewer (React Three Fiber)
+
+ Install @react-three/fiber, @react-three/drei, three
+ Create components/DepthViewer.tsx with Canvas
+ Add two layered planes (background at z = -3, foreground at z = 0 with alpha)
+ Add DeviceOrientationControls (mobile gyroscope) with iOS permission handling
+ Add mouse parallax for desktop (x/y movement → camera rotation)
+ Make controls feel identical to Apple spatial photos (smooth, correct speed)
+ Add full-screen toggle button
+ Add “How to tilt” overlay on first visit (auto-dismiss after 3 sec)
+
+Phase 4 – Result & Sharing Page
+
+ Create /process page (client-side) that runs pipeline and shows DepthViewer
+ Show nice circular progress + “Analyzing depth…”, “Filling background…”, “Building 3D scene…”
+ After processing, auto-switch to full-screen viewer
+ Add “Share” button → copies link https://depthify.app/s/[random-id]
+ Create dynamic route /s/[id] that loads the result from URL params or IndexedDB
+ Store processed result in IndexedDB (so share links work forever without server)
+ Add download buttons:
+ Download as looping GIF (5 seconds) using gif.js
+ Download as WebM (using MediaRecorder)
+
+
+Phase 5 – Polish & Performance
+
+ Add error handling (model fails, low memory, iOS permission denied)
+ Add fallback for very slow devices (<10 sec → show “This might take a moment…”)
+ Optimize model loading (show progress bar for ONNX files)
+ Lazy-load models only when user uploads first photo
+ Add OG image + Twitter card for share links
+ Mobile: request motion permission nicely on iOS
+ Test on real devices:
+ iPhone SE 2022
+ iPhone 15 Pro
+ Android mid-range (Pixel 6a or Samsung A54)
+ MacBook + Windows laptop
+
+ Ensure <4 second average processing on iPhone 15 / modern laptop
+ Add analytics (Vercel Analytics or Umami self-hosted) – optional but recommended
+
+Phase 6 – Launch Tasks
+
+ Write launch tweet/thread + 3 demo videos (portrait, pet, landscape)
+ Submit to Product Hunt (prepare thumbnail, description, maker comment)
+ Post to Reddit: r/webdev, r/SideProject, r/artificial, r/iOS, r/javascript
+ Post to Hacker News (Show HN)
+ Add GitHub stars button + “Star on GitHub” on site
+ Add License (MIT)
+
+Optional Post-MVP (Do NOT block launch)
+
+ Multi-layer depth with Marigold/ZoeDepth
+ Export Apple .MV-HEVC spatial video
+ Batch album mode
+ Community gallery
+ Head tracking (removed from MVP)

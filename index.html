@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Depth-ify // Spatial Memories</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Work+Sans:wght@800;900&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --color-bg: #f0f0f0;
+        --color-text: #1a1a1a;
+        --color-accent: #00f0ff; /* Cyber Cyan */
+        --color-accent-dark: #00a0aa;
+      }
+      
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Space Mono', monospace;
+        background-color: var(--color-bg);
+        color: var(--color-text);
+        overflow: hidden; /* Prevent scroll for the app feel */
+      }
+
+      /* Scanline Effect */
+      .scanlines {
+        background: linear-gradient(
+          to bottom,
+          rgba(255,255,255,0),
+          rgba(255,255,255,0) 50%,
+          rgba(0,0,0,0.05) 50%,
+          rgba(0,0,0,0.05)
+        );
+        background-size: 100% 4px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 9999;
+      }
+
+      /* Dithering Pattern Overlay */
+      .dither {
+        background-image: radial-gradient(#000 1px, transparent 0);
+        background-size: 4px 4px;
+        opacity: 0.03;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9998;
+      }
+
+      /* Utilities */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      
+      canvas {
+        touch-action: none;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "@react-three/drei": "https://aistudiocdn.com/@react-three/drei@^10.7.7",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "three": "https://aistudiocdn.com/three@^0.181.2",
+    "@react-three/fiber": "https://aistudiocdn.com/@react-three/fiber@^9.4.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <div class="scanlines"></div>
+    <div class="dither"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
