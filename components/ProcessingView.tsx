@@ -41,7 +41,7 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({ logs }) => {
           {logs.map((log) => (
             <div key={log.id} className="flex gap-3 animate-[fadeIn_0.2s_ease-out]">
               <span className="opacity-40 select-none">[{new Date(log.timestamp).toLocaleTimeString('en-US', {hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit'})}]</span>
-              <span><span className="text-white/50 mr-2">root@depth-ify:~#</span>{log.message}</span>
+              <span><span className="text-white/50 mr-2">root@spatiafy:~#</span>{log.message}</span>
             </div>
           ))}
           <div className="animate-pulse">_</div>

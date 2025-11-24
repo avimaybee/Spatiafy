@@ -60,7 +60,7 @@ const App: React.FC = () => {
                <Layers size={24} strokeWidth={1.5} />
             </div>
             <div className="flex flex-col">
-              <h1 className="font-work font-black text-3xl tracking-tighter leading-none">DEPTH-IFY</h1>
+              <h1 className="font-work font-black text-3xl tracking-tighter leading-none">SPATIAFY</h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className="w-2 h-2 bg-[#00f0ff] animate-pulse rounded-full"></span>
                 <p className="font-mono text-[10px] tracking-[0.2em] font-bold opacity-60">SPATIAL MEMORY ENGINE</p>

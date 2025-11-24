@@ -1,18 +1,13 @@
 import { ProcessedImage } from '../types';
 import { GoogleGenAI } from "@google/genai";
-import { pipeline, env } from '@xenova/transformers';
 
-// Initialize the API client
+// Initialize the API clients
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Configure Transformers.js
-// We use CDN models, disallow local to prevent path errors in this env
-env.allowLocalModels = false;
-env.useBrowserCache = true;
-
-// Singleton for the segmenter and depth estimator
-let segmenter: any = null;
-let depthEstimator: any = null;
+// API Server base. In Vercel deploy the serverless functions live under `/api`,
+// so default to an empty base which makes requests target `/api/*` on the same origin.
+// Allow overriding with `VITE_API_SERVER` if needed (e.g. external API host).
+const API_SERVER = import.meta.env.VITE_API_SERVER || '';
 
 export const processImage = async (file: File, logCallback: (msg: string) => void): Promise<ProcessedImage> => {
   return new Promise((resolve, reject) => {
@@ -27,39 +22,38 @@ export const processImage = async (file: File, logCallback: (msg: string) => voi
 
       img.onload = async () => {
         try {
-          // Step 1: Initialize & Segmentation
-          logCallback('Loading neural vision model (RMBG-1.4)...');
+          // Step 1: Background Removal (Cloud)
+          logCallback('Analyzing image with AI...');
           await sleep(100);
 
           // Get smart mask and foreground
           const { url: foregroundUrl, mask } = await createSmartForeground(originalBase64, logCallback);
 
-          // Step 2: Background Generation (Inpainting)
-          logCallback('Synthesizing deep background layer...');
+          // Step 2: Background Generation (Gemini Inpainting)
+          logCallback('Generating seamless background...');
           let rawBackgroundUrl = originalBase64;
 
           try {
             if (process.env.API_KEY) {
-              // Try Gemini for "True" inpainting
+              // Use Gemini for high-quality inpainting
               rawBackgroundUrl = await generateBackgroundWithGemini(originalBase64.split(',')[1], file.type, logCallback);
             } else {
               throw new Error("No API Key");
             }
           } catch (err) {
             console.warn("GenAI inpainting failed or no key, using fallback", err);
-            logCallback('Using local context synthesis...');
+            logCallback('Using fallback background synthesis...');
             rawBackgroundUrl = await createBlurredBackground(img);
           }
 
-          // Step 3: Depth Map Generation
-          logCallback('Calculating depth topology...');
+          // Step 3: Depth Map Generation (Cloud)
+          logCallback('Mapping 3D depth structure...');
           const depthMapUrl = await createDepthMap(originalBase64, logCallback);
 
           // Step 4: Composite Perfect Background
-          // This ensures the background behind the subject is filled, but the rest remains sharp/original
-          logCallback('Composing seamless spatial layers...');
+          logCallback('Finalizing spatial layers...');
           const finalBackgroundUrl = await compositeBackground(img, rawBackgroundUrl, mask);
-          await sleep(300);
+          await sleep(200);
 
           resolve({
             id: Math.random().toString(36).substring(7),
@@ -87,87 +81,119 @@ export const processImage = async (file: File, logCallback: (msg: string) => voi
 };
 
 // ------------------------------------------------------------------
-// Smart Segmentation (Client Side)
+// Smart Segmentation (via Backend API)
 // ------------------------------------------------------------------
 
 const createSmartForeground = async (imageUrl: string, log: (m: string) => void): Promise<{ url: string, mask: HTMLCanvasElement }> => {
-  if (!segmenter) {
-    log('Initializing AI Model...');
-    // Use Xenova/u2net as fallback for RMBG-1.4 (which gave 401 errors)
-    segmenter = await pipeline('image-segmentation', 'Xenova/u2net');
+  log('Removing background with RMBG-2.0...');
+
+  // Convert base64 to blob
+  const blob = await fetch(imageUrl).then(r => r.blob());
+
+  // Call our backend API (which proxies to Hugging Face)
+  const response = await fetch(`${API_SERVER}/api/segment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+    },
+    body: blob,
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Segmentation failed: ${error}`);
   }
 
-  log('Extracting subject...');
+  // Response is the segmented image (PNG with alpha channel)
+  const resultBlob = await response.blob();
+  const resultUrl = URL.createObjectURL(resultBlob);
 
-  // Predict
-  const result = await segmenter(imageUrl);
+  // Load into canvas to extract mask
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        reject(new Error('Canvas context failed'));
+        return;
+      }
 
-  // The result is usually a RawImage, convert to canvas
-  // Transformers.js v2.17+ returns an object with `mask` and `image` depending on task, 
-  // but for image-segmentation it returns the mask or RGBA image. 
-  // For RMBG-1.4 specifically in transformers.js, it returns the RGBA image (subject).
+      ctx.drawImage(img, 0, 0);
+      
+      // Create mask canvas from alpha channel
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width = img.width;
+      maskCanvas.height = img.height;
+      const mCtx = maskCanvas.getContext('2d');
+      
+      if (mCtx) {
+        mCtx.drawImage(img, 0, 0);
+      }
 
-  const resultCanvas = document.createElement('canvas');
-  // result can be converted to canvas directly if it's a RawImage
-  const processedImg = result.toCanvas ? result.toCanvas() : result;
-
-  resultCanvas.width = processedImg.width;
-  resultCanvas.height = processedImg.height;
-  const rCtx = resultCanvas.getContext('2d');
-  if (!rCtx) throw new Error('Context lost');
-  rCtx.drawImage(processedImg, 0, 0);
-
-  // Create a clean mask canvas for compositing logic
-  // We need to extract the Alpha channel from the resultCanvas
-  const maskCanvas = document.createElement('canvas');
-  maskCanvas.width = resultCanvas.width;
-  maskCanvas.height = resultCanvas.height;
-  const mCtx = maskCanvas.getContext('2d');
-
-  if (mCtx) {
-    mCtx.drawImage(resultCanvas, 0, 0);
-    // The resultCanvas already has the subject with alpha.
-    // So this clone serves as our "Subject Mask Source".
-  }
-
-  return {
-    url: resultCanvas.toDataURL(),
-    mask: maskCanvas
-  };
+      resolve({
+        url: canvas.toDataURL('image/png'),
+        mask: maskCanvas
+      });
+    };
+    img.onerror = () => reject(new Error('Failed to load segmented image'));
+    img.src = resultUrl;
+  });
 };
 
 // ------------------------------------------------------------------
-// Depth Estimation (Client Side)
+// Depth Estimation (via Backend API)
 // ------------------------------------------------------------------
 
 const createDepthMap = async (imageUrl: string, log: (m: string) => void): Promise<string> => {
-  if (!depthEstimator) {
-    log('Initializing Depth Model...');
-    // Use depth-anything-small-hf via Xenova
-    depthEstimator = await pipeline('depth-estimation', 'Xenova/depth-anything-small-hf');
+  log('Computing depth map with Depth-Anything-V2...');
+
+  // Convert base64 to blob
+  const blob = await fetch(imageUrl).then(r => r.blob());
+
+  // Call our backend API (which proxies to Hugging Face)
+  const response = await fetch(`${API_SERVER}/api/depth`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+    },
+    body: blob,
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Depth estimation failed: ${error}`);
   }
 
-  log('Scanning 3D structure...');
-  const result = await depthEstimator(imageUrl);
+  // Response is the depth map image (grayscale)
+  const resultBlob = await response.blob();
+  const resultUrl = URL.createObjectURL(resultBlob);
 
-  // result is { depth: Tensor, predicted_depth: Tensor } or similar depending on version
-  // For depth-estimation pipeline, it typically returns an object with a 'depth' property which is a RawImage or similar
+  // Convert to base64 for consistent format
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        reject(new Error('Canvas context failed'));
+        return;
+      }
 
-  // Convert to canvas
-  // The pipeline output for depth-estimation usually contains a `depth` property which is the grayscale image
-  const depthImage = result.depth;
-
-  const canvas = document.createElement('canvas');
-  const processedImg = depthImage.toCanvas ? depthImage.toCanvas() : depthImage;
-
-  canvas.width = processedImg.width;
-  canvas.height = processedImg.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Context lost');
-
-  ctx.drawImage(processedImg, 0, 0);
-
-  return canvas.toDataURL();
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load depth map'));
+    img.src = resultUrl;
+  });
 };
 
 
