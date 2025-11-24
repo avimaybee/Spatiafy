@@ -1,16 +1,14 @@
-import fetch from 'node-fetch';
-
 const HF_ROUTER_BASE = 'https://router.huggingface.co/pipeline';
 const DEPTH_TASK = 'depth-estimation';
 const DEPTH_MODEL = 'depth-anything/Depth-Anything-V2-Small-hf';
 
-const readRaw = async (req) => {
+async function readRaw(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   return Buffer.concat(chunks);
-};
+}
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
     const HF_TOKEN = process.env.HUGGINGFACE_TOKEN;
     if (!HF_TOKEN) return res.status(500).json({ error: 'Missing HUGGINGFACE_TOKEN' });
@@ -38,4 +36,4 @@ export default async function handler(req, res) {
     console.error('depth error', err);
     res.status(500).json({ error: err.message });
   }
-}
+};
