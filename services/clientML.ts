@@ -103,12 +103,13 @@ export async function getSegmentationPipeline(onProgress?: (progress: number, st
 
   try {
     console.log('[ML] Loading segmentation model...');
+    // Use MODNet which is optimized for portrait/human background removal via Transformers.js
     segmentationPipeline = await pipeline(
       'image-segmentation',
-      'Xenova/segformer_b2_clothes', // Good for person/background separation
+      'Xenova/modnet',
       {
         progress_callback: (progress: any) => {
-          if (progress.status === 'progress') {
+          if (progress.status === 'progress' && progress.total) {
             const pct = Math.round((progress.loaded / progress.total) * 100);
             onProgress?.(pct, `Downloading model: ${pct}%`);
             console.log(`[ML] Download progress: ${pct}%`);
@@ -177,52 +178,77 @@ export async function removeBackground(
   onProgress?.(50, 'Processing image...');
   console.log('[ML] Running segmentation...');
   
+  // MODNet and similar models return segmentation results
   const results = await segmenter(imageUrl);
-  console.log('[ML] Segmentation results:', results.map((r: any) => r.label));
-  
-  // Find the best foreground mask (person, or largest non-background segment)
-  let bestMask = results[0];
-  for (const result of results) {
-    if (result.label?.toLowerCase().includes('person') || 
-        result.label?.toLowerCase().includes('foreground')) {
-      bestMask = result;
-      break;
-    }
+  console.log('[ML] Segmentation results:', results);
+  console.log('[ML] Results type:', Array.isArray(results) ? 'array' : typeof results);
+  if (Array.isArray(results) && results.length > 0) {
+    console.log('[ML] First result keys:', Object.keys(results[0]));
   }
   
   onProgress?.(80, 'Creating foreground layer...');
   
-  // Load original image into a canvas
-  const originalImage = await loadImageToCanvas(imageUrl);
+  // Load original image using RawImage for consistency
+  const originalImage = await RawImage.fromURL(imageUrl);
+  console.log('[ML] Original image:', originalImage.width, 'x', originalImage.height, 'channels:', originalImage.channels);
   
-  // Create canvas for the mask
+  // The segmentation pipeline typically returns an array of objects with:
+  // - label: string (e.g., "foreground", "background", "person")
+  // - score: number
+  // - mask: RawImage (grayscale mask where 255=object, 0=background)
+  
+  // Find the foreground/person mask
+  let maskRawImage: any = null;
+  
+  if (Array.isArray(results)) {
+    // Look for a mask - could be labeled "foreground", "person", or just the first mask
+    for (const result of results) {
+      console.log('[ML] Result item:', { label: result.label, score: result.score, hasMask: !!result.mask });
+      if (result.mask) {
+        // Use the first valid mask we find (MODNet typically returns one mask)
+        maskRawImage = result.mask;
+        break;
+      }
+    }
+  } else if (results && results.mask) {
+    maskRawImage = results.mask;
+  }
+  
+  if (!maskRawImage) {
+    throw new Error('No mask found in segmentation results');
+  }
+  
+  console.log('[ML] Mask:', maskRawImage.width, 'x', maskRawImage.height, 'channels:', maskRawImage.channels);
+  
+  // Create mask canvas at original image size
   const maskCanvas = document.createElement('canvas');
   maskCanvas.width = originalImage.width;
   maskCanvas.height = originalImage.height;
   const maskCtx = maskCanvas.getContext('2d')!;
   
-  // Draw the mask - handle RawImage properly
-  if (bestMask.mask) {
-    const maskImageCanvas = await rawImageToCanvas(bestMask.mask);
-    maskCtx.drawImage(maskImageCanvas, 0, 0, maskCanvas.width, maskCanvas.height);
-  }
+  // Convert RawImage mask to canvas, scaling to original size
+  const tempMaskCanvas = rawImageToCanvas(maskRawImage);
+  maskCtx.drawImage(tempMaskCanvas, 0, 0, maskCanvas.width, maskCanvas.height);
   
-  // Create foreground with transparency
+  // Create foreground canvas with transparency
   const foregroundCanvas = document.createElement('canvas');
   foregroundCanvas.width = originalImage.width;
   foregroundCanvas.height = originalImage.height;
   const fgCtx = foregroundCanvas.getContext('2d')!;
   
-  // Draw original
-  fgCtx.drawImage(originalImage, 0, 0);
+  // Draw the original image onto foreground canvas
+  const originalCanvas = rawImageToCanvas(originalImage);
+  fgCtx.drawImage(originalCanvas, 0, 0);
   
-  // Apply mask as alpha channel
+  // Get pixel data from both canvases
   const fgData = fgCtx.getImageData(0, 0, foregroundCanvas.width, foregroundCanvas.height);
   const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
   
+  // Apply mask as alpha channel
+  // Mask is grayscale: 255 = foreground (keep), 0 = background (transparent)
   for (let i = 0; i < fgData.data.length; i += 4) {
-    // Use mask value as alpha (grayscale -> alpha)
-    fgData.data[i + 3] = maskData.data[i]; // R channel of mask as alpha
+    // Use the red channel of the mask as alpha (grayscale, so R=G=B)
+    fgData.data[i + 3] = maskData.data[i]; // Set alpha from mask
   }
   
   fgCtx.putImageData(fgData, 0, 0);
