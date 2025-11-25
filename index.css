@@ -1,10 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --color-bg: #f0f0f0;
   --color-text: #1a1a1a;
   --color-accent: #00f0ff;
+  --color-accent-dark: #00a0aa;
 }
 
-html, body {
+body {
   margin: 0;
   padding: 0;
   font-family: 'Space Mono', monospace;
