@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { UploadZone } from './components/UploadZone';
 import { ProcessingView } from './components/ProcessingView';
-import { DepthViewer } from './components/DepthViewer';
+import { DepthParallaxViewer } from './components/DepthParallaxViewer';
 import { HistoryGrid } from './components/HistoryGrid';
 import { AppState, ProcessedImage, ProcessingLog } from './types';
 import { processImage } from './services/imageProcessor';
@@ -96,7 +96,7 @@ const App: React.FC = () => {
 
         {state === AppState.VIEWING && result && (
           <div className="absolute inset-0 w-full h-full animate-[zoomIn_0.3s_ease-out]">
-            <DepthViewer data={result} onReset={handleReset} />
+            <DepthParallaxViewer data={result} onReset={handleReset} />
           </div>
         )}
 
