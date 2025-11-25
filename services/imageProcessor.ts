@@ -4,10 +4,12 @@ import { GoogleGenAI } from "@google/genai";
 // Initialize the API clients
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// API Server base. In Vercel deploy the serverless functions live under `/api`,
-// so default to an empty base which makes requests target `/api/*` on the same origin.
-// Allow overriding with `VITE_API_SERVER` if needed (e.g. external API host).
-const API_SERVER = import.meta.env.VITE_API_SERVER || '';
+// API Server base. In production the serverless functions live under `/api`, so
+// default to empty to target same-origin APIs. During local development fall
+// back to the Express server on port 3002 so requests succeed even if the Vite
+// proxy is bypassed. Allow overriding with `VITE_API_SERVER` if needed (e.g.
+// external API host).
+const API_SERVER = import.meta.env.VITE_API_SERVER || (import.meta.env.DEV ? 'http://localhost:3002' : '');
 
 export const processImage = async (file: File, logCallback: (msg: string) => void): Promise<ProcessedImage> => {
   return new Promise((resolve, reject) => {
