@@ -17,6 +17,73 @@ let depthPipeline: any = null;
 let isLoadingSegmentation = false;
 let isLoadingDepth = false;
 
+// ------------------------------------------------------------------
+// Helper functions for image conversion
+// ------------------------------------------------------------------
+
+/**
+ * Load an image URL into an HTMLCanvasElement
+ */
+function loadImageToCanvas(imageUrl: string): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Failed to get canvas context'));
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas);
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = imageUrl;
+  });
+}
+
+/**
+ * Convert a RawImage (from Transformers.js) to HTMLCanvasElement
+ */
+function rawImageToCanvas(rawImage: any): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = rawImage.width;
+  canvas.height = rawImage.height;
+  const ctx = canvas.getContext('2d')!;
+  
+  // RawImage has width, height, channels, and data (Uint8Array or similar)
+  const imageData = ctx.createImageData(rawImage.width, rawImage.height);
+  
+  if (rawImage.channels === 1) {
+    // Grayscale - expand to RGBA
+    for (let i = 0; i < rawImage.data.length; i++) {
+      const val = rawImage.data[i];
+      imageData.data[i * 4] = val;     // R
+      imageData.data[i * 4 + 1] = val; // G
+      imageData.data[i * 4 + 2] = val; // B
+      imageData.data[i * 4 + 3] = 255; // A
+    }
+  } else if (rawImage.channels === 3) {
+    // RGB - add alpha
+    for (let i = 0; i < rawImage.width * rawImage.height; i++) {
+      imageData.data[i * 4] = rawImage.data[i * 3];     // R
+      imageData.data[i * 4 + 1] = rawImage.data[i * 3 + 1]; // G
+      imageData.data[i * 4 + 2] = rawImage.data[i * 3 + 2]; // B
+      imageData.data[i * 4 + 3] = 255; // A
+    }
+  } else if (rawImage.channels === 4) {
+    // RGBA - direct copy
+    imageData.data.set(rawImage.data);
+  }
+  
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// ------------------------------------------------------------------
+// Pipeline loaders
+// ------------------------------------------------------------------
+
 /**
  * Get or initialize the segmentation pipeline.
  * Uses RMBG model optimized for background removal.
@@ -125,8 +192,8 @@ export async function removeBackground(
   
   onProgress?.(80, 'Creating foreground layer...');
   
-  // Load original image
-  const originalImage = await RawImage.fromURL(imageUrl);
+  // Load original image into a canvas
+  const originalImage = await loadImageToCanvas(imageUrl);
   
   // Create canvas for the mask
   const maskCanvas = document.createElement('canvas');
@@ -134,10 +201,10 @@ export async function removeBackground(
   maskCanvas.height = originalImage.height;
   const maskCtx = maskCanvas.getContext('2d')!;
   
-  // Draw the mask
+  // Draw the mask - handle RawImage properly
   if (bestMask.mask) {
-    const maskImage = bestMask.mask.toCanvas();
-    maskCtx.drawImage(maskImage, 0, 0, maskCanvas.width, maskCanvas.height);
+    const maskImageCanvas = await rawImageToCanvas(bestMask.mask);
+    maskCtx.drawImage(maskImageCanvas, 0, 0, maskCanvas.width, maskCanvas.height);
   }
   
   // Create foreground with transparency
@@ -147,8 +214,7 @@ export async function removeBackground(
   const fgCtx = foregroundCanvas.getContext('2d')!;
   
   // Draw original
-  const originalCanvas = originalImage.toCanvas();
-  fgCtx.drawImage(originalCanvas, 0, 0);
+  fgCtx.drawImage(originalImage, 0, 0);
   
   // Apply mask as alpha channel
   const fgData = fgCtx.getImageData(0, 0, foregroundCanvas.width, foregroundCanvas.height);
@@ -189,13 +255,15 @@ export async function estimateDepth(
   const result = await depthEstimator(imageUrl);
   console.log('[ML] Depth result:', {
     hasDepth: !!result.depth,
-    hasPredicted: !!result.predicted_depth
+    hasPredicted: !!result.predicted_depth,
+    depthType: result.depth?.constructor?.name,
+    depthKeys: result.depth ? Object.keys(result.depth) : []
   });
   
   onProgress?.(90, 'Finalizing depth map...');
   
-  // Get the depth map as canvas
-  const depthCanvas = result.depth.toCanvas();
+  // Convert the depth RawImage to canvas
+  const depthCanvas = rawImageToCanvas(result.depth);
   
   onProgress?.(100, 'Depth estimation complete!');
   console.log('[ML] ✅ Depth estimation complete');
